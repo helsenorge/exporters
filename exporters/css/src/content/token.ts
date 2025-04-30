@@ -50,7 +50,10 @@ export function convertedToken(
 
   // Add description comment if enabled and description exists
   if (exportConfiguration.showDescriptions && token.description) {
-    return `\n${indentString}/* ${token.description.trim()} */\n${indentString}--${name}: ${value};`
+    const firstToken = mappedTokens.values().next().value;
+    const isFirst = token === firstToken;
+
+    return `${isFirst ? '' : '\n'}${indentString}/* ${token.description.trim()} */\n${indentString}--${name}: ${value};`
   } else {
     return `${indentString}--${name}: ${value};`
   }
