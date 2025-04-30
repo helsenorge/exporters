@@ -50,7 +50,7 @@ export function convertedToken(
 
   // Add description comment if enabled and description exists
   if (exportConfiguration.showDescriptions && token.description) {
-    return `${indentString}/* ${token.description.trim()} */\n${indentString}--${name}: ${value};`
+    return `\n${indentString}/* ${token.description.trim()} */\n${indentString}--${name}: ${value};`
   } else {
     return `${indentString}--${name}: ${value};`
   }
