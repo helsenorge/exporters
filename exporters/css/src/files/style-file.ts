@@ -113,7 +113,7 @@ export function styleOutputFile(
     fileName += '.css'
   }
 
-  content = "/* stylelint-disable color-hex-length */\n\n/* stylelint-disable comment-empty-line-before */\n\n/* stylelint-disable scss/operator-no-unspaced */\n\n" + content;
+  content = "/* stylelint-disable color-hex-length */\n/* stylelint-disable comment-empty-line-before */\n/* stylelint-disable scss/operator-no-unspaced */\n\n" + content;
 
   // Create and return the output file object
   return FileHelper.createTextFile({
