@@ -50,11 +50,15 @@ export function convertedToken(
 
   // Add description comment if enabled and description exists
   if (exportConfiguration.showDescriptions && token.description) {
-    const firstDescribedKey = Array.from(mappedTokens.entries())
-      .find(([_, t]) => !!t.description)?.[0]
-    const isFirst = name === firstDescribedKey;
+    const describedInGroup = Array.from(mappedTokens.entries())
+      .filter(([_, t]) =>
+        t.parentGroupId === token.parentGroupId && !!t.description
+      )
+      .map(([key]) => key);
+    const firstDescribedKey = describedInGroup[0];
+    const isFirstInGroup = name === firstDescribedKey;
 
-    return `${isFirst ? '' : '\n'}${indentString}/* ${token.description.trim()} */\n${indentString}--${name}: ${value};`
+    return `${isFirstInGroup ? '' : '\n'}${indentString}/* ${token.description.trim()} */\n${indentString}--${name}: ${value};`
   } else {
     return `${indentString}--${name}: ${value};`
   }
