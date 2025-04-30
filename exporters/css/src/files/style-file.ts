@@ -113,6 +113,8 @@ export function styleOutputFile(
     fileName += '.css'
   }
 
+  content = "/* stylelint-disable color-hex-length */\n\n" + content;
+
   // Create and return the output file object
   return FileHelper.createTextFile({
     relativePath: relativePath,
