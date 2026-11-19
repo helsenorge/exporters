@@ -1,6 +1,16 @@
 ### Style Dictionary Exporter
 All the updates to this exporter are documented in this file.
 
+## 2.6.0 - 2026-11-16
+
+### 🐞 Fixed
+- Colors that reference another color with their own opacity, and shadows with their own opacity, export as the resolved color, for example `#ff000066`, instead of the invalid `rgba({color.…}, 0.4)`.
+
+## 2.5.1 - 2026-11-09
+
+### 🐞 Fixed
+- Border and gradient tokens whose color references a color token now use the reference directly instead of the invalid `rgba({color.…}, 1)`.
+
 ## 2.5.0 - 2025-01-XX
 
 ### ✨ Added
