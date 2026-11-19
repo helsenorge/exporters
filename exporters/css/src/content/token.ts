@@ -1,6 +1,6 @@
 import { DesignSystemCollection } from "@supernovaio/sdk-exporters/build/sdk-typescript/src/model/base/SDKDesignSystemCollection"
 import { NamingHelper, CSSHelper, GeneralHelper } from "@supernovaio/export-utils"
-import { Token, TokenGroup, TokenType } from "@supernovaio/sdk-exporters"
+import { ColorToken, Token, TokenGroup, TokenType } from "@supernovaio/sdk-exporters"
 import { exportConfiguration } from ".."
 import { DEFAULT_TOKEN_PREFIXES } from "../constants/defaults"
 import { TokenNameStructure } from "../../config"
@@ -13,65 +13,6 @@ import { TokenNameStructure } from "../../config"
  */
 export function getTokenPrefix(tokenType: TokenType): string {
   return exportConfiguration.customizeTokenPrefixes ? exportConfiguration.tokenPrefixes[tokenType] : DEFAULT_TOKEN_PREFIXES[tokenType]
-}
-
-/**
- * Analyzes tokens to identify which color tokens need RGB utility versions.
- * A color token needs an RGB utility if it's referenced by shadow, border, or gradient tokens
- * that have custom opacity values.
- * 
- * @param tokens - Array of all tokens
- * @param tokenGroups - Array of token groups for determining token hierarchy
- * @param collections - Array of collections for resolving collection names
- * @returns Set of color token IDs that need RGB utility versions
- */
-export function analyzeTokensForRgbUtilities(
-  tokens: Array<Token>,
-  tokenGroups: Array<TokenGroup>,
-  collections: Array<DesignSystemCollection> = []
-): Set<string> {
-  const colorTokensNeedingRgb = new Set<string>()
-  const mappedTokens = new Map(tokens.map((token) => [token.id, token]))
-
-  // Analyze shadow, border, and gradient tokens
-  tokens.forEach((token) => {
-    if (token.tokenType === TokenType.shadow) {
-      const shadowToken = token as any
-      shadowToken.value.forEach((shadowLayer: any) => {
-        // Check if shadow has custom opacity and references a color token
-        if (shadowLayer.opacity && shadowLayer.color.referencedTokenId) {
-          const referencedColorToken = mappedTokens.get(shadowLayer.color.referencedTokenId)
-          if (referencedColorToken && referencedColorToken.tokenType === TokenType.color) {
-            colorTokensNeedingRgb.add(referencedColorToken.id)
-          }
-        }
-      })
-    } else if (token.tokenType === TokenType.border) {
-      const borderToken = token as any
-      // Check if border has custom opacity and references a color token
-      if (borderToken.value.opacity && borderToken.value.color.referencedTokenId) {
-        const referencedColorToken = mappedTokens.get(borderToken.value.color.referencedTokenId)
-        if (referencedColorToken && referencedColorToken.tokenType === TokenType.color) {
-          colorTokensNeedingRgb.add(referencedColorToken.id)
-        }
-      }
-    } else if (token.tokenType === TokenType.gradient) {
-      const gradientToken = token as any
-      gradientToken.value.forEach((gradientLayer: any) => {
-        gradientLayer.stops.forEach((stop: any) => {
-          // Check if gradient stop has custom opacity and references a color token
-          if (stop.opacity && stop.color.referencedTokenId) {
-            const referencedColorToken = mappedTokens.get(stop.color.referencedTokenId)
-            if (referencedColorToken && referencedColorToken.tokenType === TokenType.color) {
-              colorTokensNeedingRgb.add(referencedColorToken.id)
-            }
-          }
-        })
-      })
-    }
-  })
-
-  return colorTokensNeedingRgb
 }
 
 /**
@@ -96,56 +37,36 @@ export function getTokenRawValue(
   })
 }
 
-/**
- * Converts a color token to its raw RGB values without following references.
- * This is used to generate fallback values for RGB utility variables.
- * 
- * @param token - The color token to convert to RGB values
- * @returns RGB values string (e.g., "16, 79, 198")
- */
-export function getColorTokenRgbValue(token: Token): string {
-  if (token.tokenType !== TokenType.color) {
-    throw new Error(`Expected color token, got ${token.tokenType}`)
-  }
-  
-  const colorValue = (token as any).value
-  const r = Math.round(colorValue.color.r)
-  const g = Math.round(colorValue.color.g)
-  const b = Math.round(colorValue.color.b)
-  
-  return `${r}, ${g}, ${b}`
+/** The channels of a color token without alpha, e.g. "16, 79, 198", or "52.4% 0.25 265.1" in the OKLCH formats */
+function colorTokenChannels(token: ColorToken): string {
+  return CSSHelper.colorChannels(token.value, exportConfiguration.colorFormat)
 }
 
 /**
- * Generates an RGB utility variable for a color token.
- * This creates a CSS variable containing only the RGB values (no alpha) for use with custom opacity.
+ * Generates the channel variable of a color token (`--rgb-…`, or `--oklch-…` in the OKLCH formats).
+ * It holds only the channels (no alpha), for colors that add their own opacity on top of this color.
  * 
- * @param token - The color token to generate RGB utility for
+ * @param token - The color token to generate the channel variable for
  * @param tokenGroups - Array of token groups for determining token hierarchy
  * @param collections - Array of collections for resolving collection names
- * @returns Formatted CSS custom property string for the RGB utility variable
+ * @returns Formatted CSS custom property string for the channel variable
  */
-export function generateRgbUtilityVariable(
-  token: Token,
+export function generateChannelVariable(
+  token: ColorToken,
   tokenGroups: Array<TokenGroup>,
   collections: Array<DesignSystemCollection> = []
 ): string {
   const name = tokenVariableName(token, tokenGroups, collections)
-  const rgbName = `rgb-${name}`
-  
-  // Extract RGB values from the color token
-  const colorValue = (token as any).value
-  const r = Math.round(colorValue.color.r)
-  const g = Math.round(colorValue.color.g)
-  const b = Math.round(colorValue.color.b)
+  const prefix = CSSHelper.channelPrefix(exportConfiguration.colorFormat)
+  const declaration = `--${prefix}-${name}: ${colorTokenChannels(token)};`
   
   const indentString = GeneralHelper.indent(exportConfiguration.indent)
   
   // Add description comment if enabled and description exists
   if (exportConfiguration.showDescriptions && token.description) {
-    return `${indentString}/* RGB utility for ${token.description.trim()} */\n${indentString}--${rgbName}: ${r}, ${g}, ${b};`
+    return `${indentString}/* ${prefix.toUpperCase()} utility for ${token.description.trim()} */\n${indentString}${declaration}`
   } else {
-    return `${indentString}--${rgbName}: ${r}, ${g}, ${b};`
+    return `${indentString}${declaration}`
   }
 }
 
@@ -157,15 +78,15 @@ export function generateRgbUtilityVariable(
  * @param mappedTokens - Map of all tokens for resolving references
  * @param tokenGroups - Array of token groups for determining token hierarchy
  * @param collections - Array of collections for resolving collection names
- * @param colorTokensNeedingRgb - Set of color token IDs that need RGB utility versions
- * @returns Formatted CSS custom property string with optional description comment and RGB utilities
+ * @param colorTokensNeedingChannels - Set of color token IDs that need a channel variable
+ * @returns Formatted CSS custom property string with optional description comment and channel variable
  */
 export function convertedToken(
   token: Token,
   mappedTokens: Map<string, Token>,
   tokenGroups: Array<TokenGroup>,
   collections: Array<DesignSystemCollection> = [],
-  colorTokensNeedingRgb?: Set<string>
+  colorTokensNeedingChannels?: Set<string>
 ): string {
   // Generate the CSS variable name based on token properties and configuration
   const name = tokenVariableName(token, tokenGroups, collections)
@@ -177,18 +98,19 @@ export function convertedToken(
     colorFormat: exportConfiguration.colorFormat,
     forceRemUnit: exportConfiguration.forceRemUnit,
     remBase: exportConfiguration.remBase,
+    writesColorChannels: true,
     // Custom handler for token references - converts them to CSS var() syntax
-    // When context.needsRgb is true, returns RGB utility variable for color tokens
+    // When context.needsRgb is true, returns the channel variable for color tokens
     // When useFallbackValues is enabled, includes raw token value as fallback
     tokenToVariableRef: (t, context) => {
       const variableName = tokenVariableName(t, tokenGroups, collections)
       
-      if (context?.needsRgb && t.tokenType === TokenType.color && colorTokensNeedingRgb?.has(t.id)) {
+      if (context?.needsRgb && t.tokenType === TokenType.color && colorTokensNeedingChannels?.has(t.id)) {
+        const channelVariable = `--${CSSHelper.channelPrefix(exportConfiguration.colorFormat)}-${variableName}`
         if (exportConfiguration.useFallbackValues) {
-          const rgbValue = getColorTokenRgbValue(t)
-          return `var(--rgb-${variableName}, ${rgbValue})`
+          return `var(${channelVariable}, ${colorTokenChannels(t as ColorToken)})`
         }
-        return `var(--rgb-${variableName})`
+        return `var(${channelVariable})`
       }
       
       if (exportConfiguration.useFallbackValues) {
@@ -210,9 +132,9 @@ export function convertedToken(
   // Add the main token variable
   output += `${indentString}--${name}: ${value};`
   
-  // Generate RGB utility variable if this color token needs one
-  if (token.tokenType === TokenType.color && colorTokensNeedingRgb?.has(token.id)) {
-    output += `\n${generateRgbUtilityVariable(token, tokenGroups, collections)}`
+  // Generate the channel variable if this color token needs one
+  if (token.tokenType === TokenType.color && colorTokensNeedingChannels?.has(token.id)) {
+    output += `\n${generateChannelVariable(token as ColorToken, tokenGroups, collections)}`
   }
   
   return output

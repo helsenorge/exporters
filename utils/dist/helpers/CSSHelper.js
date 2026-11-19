@@ -11,29 +11,92 @@ class CSSHelper {
      * Helper function to handle color with custom opacity, using channel-based utilities when available
      */
     static handleColorWithCustomOpacity(color, customOpacity, allTokens, options) {
-        if (customOpacity && color.referencedTokenId) {
-            // If we have custom opacity and reference a color token, try to use channel-based utility
-            const referencedColorToken = allTokens.get(color.referencedTokenId);
-            if (referencedColorToken && referencedColorToken.tokenType === sdk_exporters_1.TokenType.color) {
-                const channelVariableName = options.tokenToVariableRef(referencedColorToken, { needsRgb: true });
-                const alphaValue = ColorHelper_1.ColorHelper.roundToDecimals(customOpacity.measure, options.decimals);
-                // Use the appropriate function based on color format
-                if (options.colorFormat === ColorFormat_1.ColorFormat.oklch ||
-                    options.colorFormat === ColorFormat_1.ColorFormat.oklcha ||
-                    options.colorFormat === ColorFormat_1.ColorFormat.smartOklch) {
-                    return `oklch(${channelVariableName} / ${alphaValue})`;
-                }
-                else {
-                    // Default to rgba for other formats (rgb, rgba, smartRgba, etc.)
-                    return `rgba(${channelVariableName}, ${alphaValue})`;
-                }
-            }
+        const referencedColorToken = this.referencedColorTokenWithCustomOpacity(color, customOpacity, allTokens);
+        if (referencedColorToken && options.allowReferences) {
+            return this.colorWithOwnOpacity({ ...color, opacity: customOpacity }, referencedColorToken, null, options);
         }
         // Fallback to normal color processing
         return this.colorTokenValueToCSS({
             ...color,
             ...(customOpacity && { opacity: customOpacity })
         }, allTokens, options);
+    }
+    /** Prefix of the channel variables: `oklch` in the OKLCH formats, which write `oklch()`, or `rgb` in the others, which write `rgba()` */
+    static channelPrefix(format) {
+        return format === ColorFormat_1.ColorFormat.oklch || format === ColorFormat_1.ColorFormat.oklcha || format === ColorFormat_1.ColorFormat.smartOklch ? "oklch" : "rgb";
+    }
+    /** The value of a channel variable: `r, g, b`, or `L% C H` in the OKLCH formats */
+    static colorChannels(color, format) {
+        const rgb = { r: Math.round(color.color.r), g: Math.round(color.color.g), b: Math.round(color.color.b) };
+        if (this.channelPrefix(format) === "oklch") {
+            // "oklch(62.8% 0.258 29.23)" without the function
+            return ColorHelper_1.ColorHelper.colorToOklch(ColorFormat_1.ColorFormat.oklch, rgb, 1, 3).slice('oklch('.length, -1);
+        }
+        return `${rgb.r}, ${rgb.g}, ${rgb.b}`;
+    }
+    /** A color that takes its RGB from another color and adds its own opacity, as the source's channel variable with that opacity, or as the resolved color when the exporter writes no channel variables */
+    static colorWithOwnOpacity(color, sourceToken, opacityToken, options) {
+        if (!options.writesColorChannels) {
+            return ColorHelper_1.ColorHelper.formattedColor(color, options.colorFormat, options.decimals);
+        }
+        const channels = options.tokenToVariableRef(sourceToken, { needsRgb: true });
+        const alpha = opacityToken?.tokenType === sdk_exporters_1.TokenType.opacity
+            ? options.tokenToVariableRef(opacityToken)
+            : ColorHelper_1.ColorHelper.roundToDecimals(color.opacity.measure, options.decimals);
+        return this.channelPrefix(options.colorFormat) === "oklch" ? `oklch(${channels} / ${alpha})` : `rgba(${channels}, ${alpha})`;
+    }
+    /** The color whose RGB a color takes, when only its color part is a reference and the opacity is its own */
+    static ownOpacitySourceId(color) {
+        return !color.referencedTokenId && color.color.referencedTokenId ? color.color.referencedTokenId : null;
+    }
+    /** The color token that a color references, when the color adds its own opacity on top of it */
+    static referencedColorTokenWithCustomOpacity(color, customOpacity, allTokens) {
+        if (!customOpacity || !color.referencedTokenId) {
+            return undefined;
+        }
+        const referencedToken = allTokens.get(color.referencedTokenId);
+        return referencedToken?.tokenType === sdk_exporters_1.TokenType.color ? referencedToken : undefined;
+    }
+    /** IDs of the color tokens that other colors use with their own opacity, so they need a channels variable. Empty when references are off */
+    static colorTokenIdsNeedingChannels(tokens, allowReferences) {
+        const colorTokenIds = new Set();
+        if (!allowReferences) {
+            return colorTokenIds;
+        }
+        const allTokens = new Map(tokens.map((token) => [token.id, token]));
+        const addSource = (color) => {
+            const sourceId = this.ownOpacitySourceId(color);
+            if (sourceId) {
+                colorTokenIds.add(sourceId);
+            }
+        };
+        for (const token of tokens) {
+            switch (token.tokenType) {
+                case sdk_exporters_1.TokenType.color:
+                    addSource(token.value);
+                    break;
+                case sdk_exporters_1.TokenType.border:
+                    addSource(token.value.color);
+                    break;
+                case sdk_exporters_1.TokenType.gradient:
+                    for (const layer of token.value) {
+                        layer.stops.forEach((stop) => addSource(stop.color));
+                    }
+                    break;
+                case sdk_exporters_1.TokenType.shadow:
+                    for (const layer of token.value) {
+                        const colorToken = this.referencedColorTokenWithCustomOpacity(layer.color, layer.opacity, allTokens);
+                        if (colorToken) {
+                            colorTokenIds.add(colorToken.id);
+                        }
+                        else {
+                            addSource(layer.color);
+                        }
+                    }
+                    break;
+            }
+        }
+        return colorTokenIds;
     }
     static tokenToCSS(token, allTokens, options) {
         /** Use subroutines to convert specific token types to different css representations. Many tokens are of the same type */
@@ -97,6 +160,11 @@ class CSSHelper {
         return cssValue;
     }
     static colorTokenValueToCSS(color, allTokens, options) {
+        const source = (0, TokenHelper_1.sureOptionalReference)(this.ownOpacitySourceId(color), allTokens, options.allowReferences);
+        if (source) {
+            const opacityToken = (0, TokenHelper_1.sureOptionalReference)(color.opacity.referencedTokenId, allTokens, options.allowReferences);
+            return this.colorWithOwnOpacity(color, source, opacityToken, options);
+        }
         return ColorHelper_1.ColorHelper.formattedColorOrVariableName(color, allTokens, options);
     }
     static borderTokenValueToCSS(border, allTokens, options) {
@@ -104,12 +172,10 @@ class CSSHelper {
         if (reference) {
             return options.tokenToVariableRef(reference);
         }
-        // Handle color with custom opacity using helper function
-        const colorValue = this.handleColorWithCustomOpacity(border.color, border.color.opacity, allTokens, options);
         const data = {
             width: this.dimensionTokenValueToCSS(border.width, allTokens, options),
             style: this.borderStyleToCSS(border.style),
-            color: colorValue,
+            color: this.colorTokenValueToCSS(border.color, allTokens, options),
             position: this.borderPositionToCSS(border.position) // Not used for now
         };
         return `${data.width} ${data.style} ${data.color}`;
@@ -164,8 +230,7 @@ class CSSHelper {
         // Example: radial-gradient(circle, rgba(63,94,251,1) 0%, rgba(252,70,107,1) 100%);
         const stops = value.stops
             .map((stop) => {
-            // Handle color with custom opacity using helper function
-            const colorValue = this.handleColorWithCustomOpacity(stop.color, stop.color.opacity, allTokens, options);
+            const colorValue = this.colorTokenValueToCSS(stop.color, allTokens, options);
             return `${colorValue} ${ColorHelper_1.ColorHelper.roundToDecimals(stop.position * 100, options.decimals)}%`;
         })
             .join(', ');

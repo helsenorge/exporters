@@ -5,7 +5,7 @@
     "author": "Jiri Trecak",
     "organization": "Helsenorge",
     "homepage": "https://frankenstein.helsenorge.design/",
-    "version": "3.5.0",
+    "version": "3.6.0",
     "usesBrands": true,
     "usesThemes": true,
     "executable": "/dist/build.js",

@@ -1,6 +1,18 @@
 ### CSS exporter release notes
 All the updates to this exporter are documented in this file.
 
+## 3.6.0 - 2026-11-16
+
+### 🐞 Fixed
+- Colors that reference another color with their own opacity, shown in Supernova as "Brand / 40%", now export as `rgba(var(--rgb-color-brand), 0.4)`, or `oklch(var(--oklch-color-brand) / 0.4)` in the OKLCH formats. They were the invalid `rgba(var(--color-brand), 0.4)` in the RGB formats and a fixed value in the others. An own opacity that references an opacity token uses its variable. With references off they are written as the resolved color.
+- Shadows with their own opacity are valid in the OKLCH formats, where they now use `--oklch-…`, and use the raw color with references off.
+- With Export only themed tokens, theme files write the `--rgb-…` and `--oklch-…` variables of all colors used with their own opacity, so they follow the theme when they change through an alias or a referenced color.
+
+## 3.5.1 - 2026-11-09
+
+### 🐞 Fixed
+- Border and gradient tokens whose color references a color token now use that color's variable, for example `1px solid var(--color-border-active)`. They were written as `rgba(var(--color-border-active), 1)`, which is not valid CSS. With references off they are written as the raw color. A border or stop whose color a shadow also uses changes from `rgba(var(--rgb-…), …)` to `var(--color-…)`; in the rgb, hashHex6 and hsl formats the color variable has no transparency, so these borders and stops are now opaque, like the color token itself.
+
 ## 3.3.0 - 2025-01-XX
 
 ### ✨ Added
